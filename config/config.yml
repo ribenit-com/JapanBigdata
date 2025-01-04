@@ -1,0 +1,16 @@
+# Crawlab 配置文件
+app:
+  name: "crawlab-project"
+  version: "1.0.0"
+
+spider:
+  timeout: 3600  # 爬虫超时时间（秒）
+  max_retry: 3   # 最大重试次数
+
+node:
+  master: "localhost:8080"
+  heartbeat_interval: 30  # 心跳间隔（秒）
+
+log:
+  level: "info"
+  path: "./logs" 
