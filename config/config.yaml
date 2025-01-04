@@ -1,0 +1,24 @@
+# config/config.yml
+# 该文件用于存储全局配置，包括 Crawlab 服务地址、日志设置、任务管理等
+
+# Crawlab 服务配置
+crawlab_host: "http://192.168.20.6:32220/"  # Crawlab 服务的主机地址
+api_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3NzY4MjE0M2ZmYzI4MDg4YzFjOTE2NCIsIm5iZiI6MTczNTk3NDI3MywidXNlcm5hbWUiOiJ6dWFuZGlsb25nIn0.N6-qr53Kwy5oa7ACMGooLRquptWl7v8Q4zrMFFlZ0cM"                # Crawlab 的 API 密钥，用于授权操作
+
+# 日志配置
+log:
+  level: "INFO"                        # 日志级别 (DEBUG, INFO, WARN, ERROR)
+  file: "logs/app.log"                 # 日志文件路径，默认为 logs/app.log
+
+# 爬虫配置
+spider:
+  timeout: 10                          # 每个爬虫任务的超时时间（单位：秒）
+  retry_count: 3                       # 爬虫任务失败时的重试次数
+
+# 节点配置
+node:
+  max_tasks: 5                         # 每个节点允许的最大并发任务数量
+
+# 其他配置
+misc:
+  enable_debug: true                   # 是否启用调试模式
