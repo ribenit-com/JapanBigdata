@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"japan_spider/config"
@@ -15,14 +18,17 @@ func main() {
 	if err := config.LoadConfig(); err != nil {
 		log.Fatalf("配置初始化失败: %v", err)
 	}
+	log.Println("配置加载成功")
 
 	// 创建并初始化日志管理器
 	logger := controllers.NewLoggerManager()
-	defer logger.Close() // 确保程序退出时关闭日志文件
-	logger.SetLogLevel("INFO")
+	defer logger.Close()
+	logger.SetLogLevel(config.GlobalConfig.Log.Level)
+	logger.Log("INFO", "日志系统初始化成功")
 
-	// 创建任务管理器，设置最大并发任务数为 1
-	taskManager := controllers.NewTaskManager(1)
+	// 创建任务管理器
+	taskManager := controllers.NewTaskManager(config.GlobalConfig.Node.MaxTasks)
+	logger.Log("INFO", "任务管理器初始化成功")
 
 	// 创建并配置爬虫实例
 	spider := &spiders.ProductSpider{
@@ -33,7 +39,7 @@ func main() {
 				"http://example.com/page1",
 				"http://example.com/page2",
 			},
-			Timeout: 10 * time.Second, // 设置超时时间
+			Timeout: time.Duration(config.GlobalConfig.Spider.Timeout) * time.Second,
 		},
 	}
 
@@ -42,17 +48,26 @@ func main() {
 		logger.Log("ERROR", "爬虫初始化失败: "+err.Error())
 		return
 	}
+	logger.Log("INFO", "爬虫初始化成功")
+
+	// 设置信号处理
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// 启动爬虫任务
 	if err := taskManager.StartTask("product_spider", func(ctx context.Context) {
-		// 处理每个起始URL
 		for _, url := range spider.StartURLs {
-			if err := spider.Process(ctx, url); err != nil {
-				logger.Log("ERROR", "处理URL失败: "+err.Error())
+			select {
+			case <-ctx.Done():
+				logger.Log("INFO", "任务被取消")
+				return
+			default:
+				if err := spider.Process(ctx, url); err != nil {
+					logger.Log("ERROR", "处理URL失败: "+err.Error())
+				}
 			}
 		}
 
-		// 任务完成后清理
 		if err := spider.Cleanup(); err != nil {
 			logger.Log("ERROR", "清理爬虫失败: "+err.Error())
 		}
@@ -61,7 +76,9 @@ func main() {
 		return
 	}
 
-	// 保持程序运行
 	logger.Log("INFO", "爬虫任务已启动，等待完成...")
-	select {} // 永久阻塞，等待任务完成
+
+	// 等待信号
+	sig := <-sigChan
+	logger.Log("INFO", "收到信号: "+sig.String()+", 准备退出...")
 }

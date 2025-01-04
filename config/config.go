@@ -7,17 +7,27 @@ import (
 )
 
 // Config 定义配置文件结构
-// 使用 yaml 标签来映射配置文件中的键名
 type Config struct {
-	CrawlabHost string `yaml:"crawlab_host"` // Crawlab 服务器地址
-	ApiKey      string `yaml:"api_key"`      // API 认证密钥
+	CrawlabHost string `yaml:"crawlab_host"`
+	ApiKey      string `yaml:"api_key"`
+	Log         struct {
+		Level string `yaml:"level"`
+		File  string `yaml:"file"`
+	} `yaml:"log"`
+	Spider struct {
+		Timeout    int `yaml:"timeout"`
+		RetryCount int `yaml:"retry_count"`
+	} `yaml:"spider"`
+	Node struct {
+		MaxTasks int `yaml:"max_tasks"`
+	} `yaml:"node"`
+	Misc struct {
+		EnableDebug bool `yaml:"enable_debug"`
+	} `yaml:"misc"`
 }
 
-// GlobalConfig 全局配置实例，其他包可以通过此变量访问配置
 var GlobalConfig Config
 
-// LoadConfig 从配置文件加载配置信息
-// 读取 config/config.yaml 文件并解析到 GlobalConfig 中
 func LoadConfig() error {
 	// 读取配置文件
 	data, err := os.ReadFile("config/config.yaml")
@@ -28,6 +38,12 @@ func LoadConfig() error {
 	// 解析 YAML 到结构体
 	err = yaml.Unmarshal(data, &GlobalConfig)
 	if err != nil {
+		return err
+	}
+
+	// 创建日志目录
+	logDir := "logs"
+	if err := os.MkdirAll(logDir, 0755); err != nil {
 		return err
 	}
 
