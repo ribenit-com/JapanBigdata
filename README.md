@@ -1,17 +1,34 @@
-crawlab_project/
-├── spiders/                 # 爬虫模块目录
-│   ├── base_spider.go       # 通用爬虫基类
-│   ├── product_spider.go    # 示例爬虫：商品爬取
-│   └── news_spider.go       # 示例爬虫：新闻爬取
-├── controllers/             # 控制模块目录
-│   ├── task_manager.go      # 任务管理
-│   ├── node_manager.go      # 节点管理
-│   └── logger.go            # 日志管理
-├── config/                  # 配置模块目录
-│   ├── config.yml           # 配置文件
-│   └── config.go            # 配置加载
-├── deploy/                  # 上传与部署模块目录
-│   ├── deploy.sh            # 部署脚本
-│   └── cli_manager.go       # Crawlab CLI 操作
-├── main.go                  # 主程序入口
-└── README.md                # 项目说明
+
+## 核心功能说明
+
+### 1. 爬虫模块 (spiders/)
+- 提供可扩展的爬虫框架
+- 支持多种爬虫类型
+- 内置错误重试和超时控制
+
+### 2. 控制器模块 (controllers/)
+- 管理爬虫任务的执行
+- 提供日志记录功能
+- 控制系统资源使用
+
+### 3. 配置模块 (config/)
+- 集中管理所有配置项
+- 支持动态配置更新
+- 提供配置验证功能
+
+### 4. 部署模块 (deploy/)
+- 简化部署流程
+- 提供命令行工具
+- 支持环境检查
+
+## 文件命名规范
+- 源代码文件：使用小写字母，下划线分隔
+- 配置文件：使用 yaml 格式
+- 文档文件：使用 Markdown 格式
+
+## 目录权限要求
+- logs/: 需要写权限
+- config/: 需要读权限
+- deploy/: 需要执行权限
+
+需要我详细解释某个模块吗？
