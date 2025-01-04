@@ -2,9 +2,11 @@ package main
 
 import (
 	"japan_spider/config"
+	"japan_spider/internal/spider"
 	"japan_spider/pkg/crawlab"
 	"japan_spider/spiders/amazon"
 	"log"
+	"time"
 )
 
 func main() {
@@ -21,6 +23,12 @@ func main() {
 
 	// 创建并运行爬虫
 	spider := &amazon.ProductSpider{
+		BaseSpider: spider.BaseSpider{
+			Name:        "amazon_product",
+			Description: "Amazon product spider",
+			StartURLs:   []string{"http://example.com/products"},
+			Timeout:     time.Duration(config.GlobalConfig.Spider.Timeout) * time.Second,
+		},
 		Client: client,
 	}
 
