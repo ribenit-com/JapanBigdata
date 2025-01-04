@@ -3,6 +3,7 @@ package spiders
 import (
 	"context"
 	"log"
+	"time"
 )
 
 type ProductSpider struct {
@@ -20,7 +21,15 @@ func NewProductSpider() *ProductSpider {
 }
 
 func (s *ProductSpider) Process(ctx context.Context, url string) error {
-	log.Printf("爬取商品数据: %s\n", url)
-	// 实现商品爬取逻辑
+	log.Printf("开始处理URL: %s", url)
+
+	// 模拟爬取过程
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(2 * time.Second):
+		log.Printf("成功爬取URL: %s", url)
+	}
+
 	return nil
 }
