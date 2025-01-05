@@ -184,7 +184,7 @@ func (s *GeonodeSpider) processURLWithRetry(ctx context.Context, url string) err
 			if err == nil {
 				return nil
 			}
-			
+
 			lastErr = err
 			log.Printf("第 %d 次尝试失败: %v", retry+1, err)
 		}
@@ -195,7 +195,7 @@ func (s *GeonodeSpider) processURLWithRetry(ctx context.Context, url string) err
 // scrapeURL 爬取单个URL
 func (s *GeonodeSpider) scrapeURL(ctx context.Context, url string) error {
 	log.Printf("开始爬取URL: %s", url)
-	
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -221,14 +221,14 @@ func (s *GeonodeSpider) scrapeURL(ctx context.Context, url string) error {
 	defer resp.Body.Close()
 
 	log.Printf("收到响应: %s, 状态码: %d", url, resp.StatusCode)
-	
+
 	// 检查状态码
 	if resp.StatusCode == http.StatusTooManyRequests {
 		log.Printf("请求频率过高，等待30秒后重试...")
 		time.Sleep(30 * time.Second)
 		return fmt.Errorf("请求频率过高")
 	}
-	
+
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("非预期的状态码: %d, URL: %s", resp.StatusCode, url)
 		return fmt.Errorf("非预期的状态码: %d", resp.StatusCode)
@@ -241,7 +241,7 @@ func (s *GeonodeSpider) scrapeURL(ctx context.Context, url string) error {
 	}
 
 	log.Printf("解析响应数据: %s, 长度: %d", url, len(body))
-	
+
 	// 打印原始响应用于调试
 	log.Printf("原始响应: %s", string(body))
 
@@ -269,11 +269,11 @@ func (s *GeonodeSpider) scrapeURL(ctx context.Context, url string) error {
 // validateAndDeduplicateResults 验证和去重结果
 func (s *GeonodeSpider) validateAndDeduplicateResults() {
 	log.Printf("开始验证和去重，当前总数: %d", len(s.results))
-	
+
 	// 先进行去重
 	seen := make(map[string]bool)
 	unique := make([]ProxyInfo, 0)
-	
+
 	for _, proxy := range s.results {
 		key := fmt.Sprintf("%s:%s", proxy.IP, proxy.Port)
 		if !seen[key] {
@@ -281,31 +281,31 @@ func (s *GeonodeSpider) validateAndDeduplicateResults() {
 			unique = append(unique, proxy)
 		}
 	}
-	
+
 	log.Printf("去重完成，去重后数量: %d", len(unique))
-	
+
 	// 验证代理
 	validProxies := make([]ProxyInfo, 0)
-	
+
 	for i, proxy := range unique {
 		log.Printf("正在验证第 %d/%d 个代理: %s:%s", i+1, len(unique), proxy.IP, proxy.Port)
-		
+
 		if s.validateProxy(proxy) {
 			validProxies = append(validProxies, proxy)
 			log.Printf("代理有效: %s:%s (%d/%d)", proxy.IP, proxy.Port, len(validProxies), i+1)
 		}
-		
+
 		// 每验证5个代理休息1秒
-		if (i+1) % 5 == 0 {
+		if (i+1)%5 == 0 {
 			log.Printf("休息1秒...")
 			time.Sleep(time.Second)
 		}
 	}
-	
+
 	s.mu.Lock()
 	s.results = validProxies
 	s.mu.Unlock()
-	
+
 	log.Printf("验证完成，有效代理数量: %d", len(validProxies))
 }
 
@@ -315,9 +315,9 @@ func (s *GeonodeSpider) validateProxy(proxy ProxyInfo) bool {
 		return false
 	}
 
-	proxyURL := fmt.Sprintf("%s://%s:%s", 
+	proxyURL := fmt.Sprintf("%s://%s:%s",
 		strings.ToLower(proxy.Protocols[0]), proxy.IP, proxy.Port)
-	
+
 	proxyURLParsed, err := url.Parse(proxyURL)
 	if err != nil {
 		return false
@@ -478,7 +478,7 @@ func debugLog(format string, v ...interface{}) {
 func main() {
 	// 设置日志格式
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile)
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
