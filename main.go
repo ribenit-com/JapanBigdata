@@ -10,7 +10,8 @@ import (
 
 	"japan_spider/config"
 	"japan_spider/controllers"
-	"japan_spider/spiders"
+	"japan_spider/internal/spider"
+	"japan_spider/spiders/amazon"
 )
 
 func main() {
@@ -34,8 +35,8 @@ func main() {
 	logger.Log("INFO", "任务管理器初始化成功")
 
 	// 创建爬虫实例并配置基本参数
-	spider := &spiders.ProductSpider{
-		BaseSpider: spiders.BaseSpider{
+	spider := &amazon.ProductSpider{
+		BaseSpider: spider.BaseSpider{
 			Name:        "ProductSpider",
 			Description: "用于爬取商品信息的爬虫",
 			// 设置起始URL列表，爬虫将从这些URL开始爬取
