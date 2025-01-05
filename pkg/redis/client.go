@@ -58,15 +58,12 @@ func (r *RedisClient) Close() error {
 	return r.client.Close()
 }
 
-// SaveProxies 保存代理列表到Redis
+// SaveProxies 保存代理列表到Redis（追加模式）
 func (r *RedisClient) SaveProxies(key string, proxies []string) error {
 	// 使用管道批量保存
 	pipe := r.client.Pipeline()
 
-	// 先删除旧的数据
-	pipe.Del(r.ctx, key)
-
-	// 添加新的数据
+	// 直接添加新的数据，不删除已有数据
 	for _, proxy := range proxies {
 		pipe.SAdd(r.ctx, key, proxy)
 	}
@@ -76,7 +73,7 @@ func (r *RedisClient) SaveProxies(key string, proxies []string) error {
 		return fmt.Errorf("保存代理到Redis失败: %w", err)
 	}
 
-	log.Printf("成功保存 %d 个代理到Redis", len(proxies))
+	log.Printf("成功追加 %d 个代理到Redis", len(proxies))
 	return nil
 }
 
@@ -106,4 +103,12 @@ func (r *RedisClient) GetRandomProxy(key string) (string, error) {
 		return "", fmt.Errorf("从Redis随机获取代理失败: %w", err)
 	}
 	return proxy, nil
+}
+
+// RemoveKey 删除指定的key
+func (r *RedisClient) RemoveKey(key string) error {
+	if err := r.client.Del(r.ctx, key).Err(); err != nil {
+		return fmt.Errorf("删除Redis key失败: %w", err)
+	}
+	return nil
 }

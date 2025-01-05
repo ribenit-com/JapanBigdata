@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -25,8 +24,6 @@ type GeonodeSpider struct {
 	RateLimit   time.Duration // 请求间隔时间，控制爬取速率
 	MaxRetries  int           // 最大重试次数，处理临时性错误
 	Timeout     time.Duration // 请求超时时间
-	mu          sync.Mutex    // 互斥锁，保护并发访问
-	results     []ProxyInfo   // 存储爬取到的代理信息
 	client      *http.Client  // HTTP客户端，用于发送请求
 	stats       *Stats        // 统计信息，记录爬虫运行状态
 }
@@ -75,7 +72,6 @@ func NewGeonodeSpider() *GeonodeSpider {
 		RateLimit:  10 * time.Second, // 请求间隔10秒
 		MaxRetries: 3,                // 最多重试3次
 		Timeout:    30 * time.Second, // 请求超时30秒
-		results:    make([]ProxyInfo, 0),
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -86,7 +82,7 @@ func NewGeonodeSpider() *GeonodeSpider {
 }
 
 // Run 运行爬虫
-func (s *GeonodeSpider) Run(ctx context.Context) error {
+func (s *GeonodeSpider) Run(ctx context.Context, redisClient *redis.RedisClient) error {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile)
 
 	log.Printf("开始运行爬虫: %+v", s)
@@ -120,7 +116,7 @@ func (s *GeonodeSpider) Run(ctx context.Context) error {
 		default:
 			log.Printf("处理第 %d/%d 个URL: %s", i+1, len(s.StartURLs), url)
 
-			if err := s.processURLWithRetry(ctx, url); err != nil {
+			if err := s.processURLWithRetry(ctx, url, redisClient); err != nil {
 				errMsg := fmt.Sprintf("处理URL %s 失败: %v", url, err)
 				log.Printf("错误: %s", errMsg)
 				errors = append(errors, errMsg)
@@ -136,20 +132,6 @@ func (s *GeonodeSpider) Run(ctx context.Context) error {
 	}
 
 	log.Printf("URL处理阶段完成，开始后续处理...")
-
-	// 验证和去重结果
-	log.Printf("开始验证和去重结果...")
-	s.validateAndDeduplicateResults()
-	log.Printf("验证和去重完成")
-
-	// 保存结果
-	log.Printf("开始保存结果...")
-	if err := s.saveResults(); err != nil {
-		errMsg := fmt.Sprintf("保存结果失败: %v", err)
-		log.Printf("错误: %s", errMsg)
-		errors = append(errors, errMsg)
-	}
-	log.Printf("结果保存完成")
 
 	// 打印统计信息
 	log.Printf("打印统计信息...")
@@ -230,7 +212,7 @@ func (s *GeonodeSpider) getTotalPages(ctx context.Context) (int, error) {
 }
 
 // processURLWithRetry 处理单个URL（带重试）
-func (s *GeonodeSpider) processURLWithRetry(ctx context.Context, url string) error {
+func (s *GeonodeSpider) processURLWithRetry(ctx context.Context, url string, redisClient *redis.RedisClient) error {
 	var lastErr error
 	for retry := 0; retry < s.MaxRetries; retry++ {
 		select {
@@ -243,7 +225,7 @@ func (s *GeonodeSpider) processURLWithRetry(ctx context.Context, url string) err
 				time.Sleep(retryDelay)
 			}
 
-			err := s.scrapeURL(ctx, url)
+			err := s.scrapeURL(ctx, url, redisClient)
 			if err == nil {
 				return nil
 			}
@@ -255,8 +237,8 @@ func (s *GeonodeSpider) processURLWithRetry(ctx context.Context, url string) err
 	return fmt.Errorf("达到最大重试次数 (%d)，最后一次错误: %v", s.MaxRetries, lastErr)
 }
 
-// scrapeURL 爬取单个URL
-func (s *GeonodeSpider) scrapeURL(ctx context.Context, url string) error {
+// scrapeURL 爬取单个URL并直接保存到Redis
+func (s *GeonodeSpider) scrapeURL(ctx context.Context, url string, redisClient *redis.RedisClient) error {
 	log.Printf("开始爬取URL: %s", url)
 	time.Sleep(s.RateLimit)
 
@@ -279,49 +261,17 @@ func (s *GeonodeSpider) scrapeURL(ctx context.Context, url string) error {
 		return fmt.Errorf("解析JSON失败: %w", err)
 	}
 
-	s.mu.Lock()
-	s.results = append(s.results, response.Data...)
-	s.mu.Unlock()
-
-	return nil
-}
-
-// validateAndDeduplicateResults 验证和去重结果
-func (s *GeonodeSpider) validateAndDeduplicateResults() {
-	log.Printf("开始验证和去重，当前总数: %d", len(s.results))
-
-	seen := make(map[string]bool)
-	unique := make([]ProxyInfo, 0)
-
-	for _, proxy := range s.results {
-		key := fmt.Sprintf("%s:%s", proxy.IP, proxy.Port)
-		if !seen[key] {
-			seen[key] = true
-			unique = append(unique, proxy)
-		}
+	// 直接将结果保存到Redis
+	proxies := make([]string, 0, len(response.Data))
+	for _, proxy := range response.Data {
+		proxyStr := fmt.Sprintf("%s:%s", proxy.IP, proxy.Port)
+		proxies = append(proxies, proxyStr)
 	}
 
-	s.results = unique
-	log.Printf("去重完成，剩余: %d", len(s.results))
-}
-
-// saveResults 保存结果
-func (s *GeonodeSpider) saveResults() error {
-	if len(s.results) == 0 {
-		return fmt.Errorf("没有数据可保存")
+	if err := redisClient.SaveProxies("geonode_proxies", proxies); err != nil {
+		return fmt.Errorf("保存到Redis失败: %w", err)
 	}
 
-	data, err := json.MarshalIndent(s.results, "", "  ")
-	if err != nil {
-		return fmt.Errorf("序列化结果失败: %w", err)
-	}
-
-	filename := fmt.Sprintf("proxies_%s.json", time.Now().Format("20060102_150405"))
-	if err := os.WriteFile(filename, data, 0644); err != nil {
-		return fmt.Errorf("保存文件失败: %w", err)
-	}
-
-	log.Printf("成功保存 %d 个代理到文件: %s", len(s.results), filename)
 	return nil
 }
 
@@ -340,41 +290,40 @@ func (s *GeonodeSpider) printStats() {
 	log.Printf("- 总URL数: %d\n", s.stats.TotalURLs)
 	log.Printf("- 成功数: %d\n", s.stats.SuccessCount)
 	log.Printf("- 错误数: %d\n", s.stats.ErrorCount)
-	log.Printf("- 有效代理数: %d\n", len(s.results))
 	log.Printf("- 总耗时: %v\n", duration)
 }
 
-// SaveToRedis 将爬取的代理保存到Redis
-func (s *GeonodeSpider) SaveToRedis(redisClient *redis.RedisClient) error {
-	// 将ProxyInfo转换为字符串格式
-	proxies := make([]string, 0, len(s.results))
-	for _, proxy := range s.results {
-		proxyStr := fmt.Sprintf("%s:%s", proxy.IP, proxy.Port)
-		proxies = append(proxies, proxyStr)
-	}
+// SaveToMongoDB 从Redis读取所有代理并保存到MongoDB（包含去重）
+func (s *GeonodeSpider) SaveToMongoDB(redisClient *redis.RedisClient, mongoClient *mongodb.MongoClient) error {
+	const redisKey = "geonode_proxies"
 
-	// 保存到Redis
-	return redisClient.SaveProxies("geonode_proxies", proxies)
-}
-
-// SaveToStorage 保存爬取结果到存储系统
-func (s *GeonodeSpider) SaveToStorage(redisClient *redis.RedisClient, mongoClient *mongodb.MongoClient) error {
-	// 1. 先保存到Redis
-	log.Printf("开始保存到Redis...")
-	if err := s.SaveToRedis(redisClient); err != nil {
-		return fmt.Errorf("保存到Redis失败: %w", err)
-	}
-
-	// 2. 从Redis批量读取并保存到MongoDB
-	log.Printf("开始保存到MongoDB...")
-	proxies, err := redisClient.GetProxies("geonode_proxies")
+	// 1. 从Redis获取所有代理
+	log.Printf("从Redis读取所有代理...")
+	proxies, err := redisClient.GetProxies(redisKey)
 	if err != nil {
 		return fmt.Errorf("从Redis读取代理失败: %w", err)
 	}
 
-	// 转换为MongoDB文档格式
-	documents := make([]interface{}, len(proxies))
-	for i, proxy := range proxies {
+	if len(proxies) == 0 {
+		log.Printf("Redis中没有待处理的代理数据")
+		return nil
+	}
+
+	// 2. 去重
+	log.Printf("开始去重，原始数量: %d", len(proxies))
+	seen := make(map[string]bool)
+	unique := make([]string, 0)
+	for _, proxy := range proxies {
+		if !seen[proxy] {
+			seen[proxy] = true
+			unique = append(unique, proxy)
+		}
+	}
+	log.Printf("去重完成，剩余数量: %d", len(unique))
+
+	// 3. 转换为MongoDB文档格式
+	documents := make([]interface{}, len(unique))
+	for i, proxy := range unique {
 		documents[i] = map[string]interface{}{
 			"proxy":    proxy,
 			"source":   "geonode",
@@ -383,9 +332,16 @@ func (s *GeonodeSpider) SaveToStorage(redisClient *redis.RedisClient, mongoClien
 		}
 	}
 
-	// 批量保存到MongoDB
+	// 4. 保存到MongoDB
+	log.Printf("开始保存到MongoDB...")
 	if err := mongoClient.SaveProxies("proxy_pool", "proxies", documents); err != nil {
 		return fmt.Errorf("保存到MongoDB失败: %w", err)
+	}
+
+	// 5. 清理Redis数据
+	log.Printf("清理Redis数据...")
+	if err := redisClient.RemoveKey(redisKey); err != nil {
+		log.Printf("警告：清理Redis数据失败: %v", err)
 	}
 
 	return nil

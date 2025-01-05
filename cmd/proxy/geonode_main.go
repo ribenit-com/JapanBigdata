@@ -61,7 +61,7 @@ func main() {
 	// 启动爬虫
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- spider.Run(ctx)
+		errChan <- spider.Run(ctx, redisClient)
 	}()
 
 	// 等待信号或完成
@@ -81,8 +81,8 @@ func main() {
 
 	log.Println("爬虫已完成")
 
-	// 在爬虫完成后保存数据
-	if err := spider.SaveToStorage(redisClient, mongoClient); err != nil {
-		log.Printf("保存数据失败: %v", err)
+	// 在爬虫完成后进行数据处理
+	if err := spider.SaveToMongoDB(redisClient, mongoClient); err != nil {
+		log.Printf("保存到MongoDB失败: %v", err)
 	}
 }
