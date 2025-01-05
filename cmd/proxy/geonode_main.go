@@ -6,8 +6,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	geonode "japan_spider/spiders/proxyPool/geonode_com"
+
+	"japan_spider/pkg/mongodb"
+	"japan_spider/pkg/redis"
 )
 
 func main() {
@@ -25,6 +29,34 @@ func main() {
 	// 创建爬虫实例
 	spider := geonode.NewGeonodeSpider()
 	log.Printf("爬虫初始化完成: %+v", spider)
+
+	// 在main函数中添加Redis初始化
+	redisCfg := &redis.Config{
+		Host:     "192.168.20.6",
+		Port:     32430,
+		Password: "", // 如果没有密码就留空
+		DB:       0,  // 使用默认数据库
+		Timeout:  5 * time.Second,
+	}
+
+	redisClient, err := redis.NewRedisClient(redisCfg)
+	if err != nil {
+		log.Fatalf("Redis初始化失败: %v", err)
+	}
+	defer redisClient.Close()
+
+	// 初始化MongoDB
+	mongoCfg := &mongodb.Config{
+		URI:      "mongodb://192.168.20.6:30643",
+		Database: "proxy_pool",
+		Timeout:  5 * time.Second,
+	}
+
+	mongoClient, err := mongodb.NewMongoClient(mongoCfg)
+	if err != nil {
+		log.Fatalf("MongoDB初始化失败: %v", err)
+	}
+	defer mongoClient.Close()
 
 	// 启动爬虫
 	errChan := make(chan error, 1)
@@ -48,4 +80,9 @@ func main() {
 	}
 
 	log.Println("爬虫已完成")
+
+	// 在爬虫完成后保存数据
+	if err := spider.SaveToStorage(redisClient, mongoClient); err != nil {
+		log.Printf("保存数据失败: %v", err)
+	}
 }

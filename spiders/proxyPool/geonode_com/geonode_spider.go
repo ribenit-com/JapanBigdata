@@ -11,6 +11,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"japan_spider/pkg/mongodb"
+	"japan_spider/pkg/redis"
 )
 
 // GeonodeSpider 代理IP爬虫结构，包含爬虫所需的所有配置和状态
@@ -339,4 +342,51 @@ func (s *GeonodeSpider) printStats() {
 	log.Printf("- 错误数: %d\n", s.stats.ErrorCount)
 	log.Printf("- 有效代理数: %d\n", len(s.results))
 	log.Printf("- 总耗时: %v\n", duration)
+}
+
+// SaveToRedis 将爬取的代理保存到Redis
+func (s *GeonodeSpider) SaveToRedis(redisClient *redis.RedisClient) error {
+	// 将ProxyInfo转换为字符串格式
+	proxies := make([]string, 0, len(s.results))
+	for _, proxy := range s.results {
+		proxyStr := fmt.Sprintf("%s:%s", proxy.IP, proxy.Port)
+		proxies = append(proxies, proxyStr)
+	}
+
+	// 保存到Redis
+	return redisClient.SaveProxies("geonode_proxies", proxies)
+}
+
+// SaveToStorage 保存爬取结果到存储系统
+func (s *GeonodeSpider) SaveToStorage(redisClient *redis.RedisClient, mongoClient *mongodb.MongoClient) error {
+	// 1. 先保存到Redis
+	log.Printf("开始保存到Redis...")
+	if err := s.SaveToRedis(redisClient); err != nil {
+		return fmt.Errorf("保存到Redis失败: %w", err)
+	}
+
+	// 2. 从Redis批量读取并保存到MongoDB
+	log.Printf("开始保存到MongoDB...")
+	proxies, err := redisClient.GetProxies("geonode_proxies")
+	if err != nil {
+		return fmt.Errorf("从Redis读取代理失败: %w", err)
+	}
+
+	// 转换为MongoDB文档格式
+	documents := make([]interface{}, len(proxies))
+	for i, proxy := range proxies {
+		documents[i] = map[string]interface{}{
+			"proxy":    proxy,
+			"source":   "geonode",
+			"createAt": time.Now(),
+			"verified": false,
+		}
+	}
+
+	// 批量保存到MongoDB
+	if err := mongoClient.SaveProxies("proxy_pool", "proxies", documents); err != nil {
+		return fmt.Errorf("保存到MongoDB失败: %w", err)
+	}
+
+	return nil
 }
