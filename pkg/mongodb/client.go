@@ -10,6 +10,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 )
 
 // MongoClient MongoDB客户端管理器
@@ -35,32 +36,39 @@ type Config struct {
 //   - *MongoClient: 创建的客户端实例
 //   - error: 如果连接失败则返回错误
 func NewMongoClient(cfg *Config) (*MongoClient, error) {
+	// 配置MongoDB客户端选项
+	clientOpts := options.Client().
+		ApplyURI(cfg.URI).
+		SetWriteConcern(writeconcern.New(
+			writeconcern.W(1),                     // 写入确认级别
+			writeconcern.J(false),                 // 不等待日志写入
+			writeconcern.WTimeout(10*time.Second), // 写入超时时间
+		)).
+		SetMaxPoolSize(100).  // 连接池大小
+		SetMinPoolSize(10).   // 最小连接数
+		SetMaxConnecting(20). // 最大并发连接数
+		SetRetryWrites(true)  // 启用重试写入
+
 	// 创建带超时的上下文
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
-	defer cancel() // 确保资源被释放
-
-	// 创建MongoDB客户端配置
-	clientOptions := options.Client().ApplyURI(cfg.URI)
+	defer cancel()
 
 	// 连接到MongoDB服务器
-	client, err := mongo.Connect(ctx, clientOptions)
+	client, err := mongo.Connect(ctx, clientOpts)
 	if err != nil {
 		return nil, fmt.Errorf("MongoDB连接失败: %w", err)
 	}
 
-	// 测试连接是否成功
-	err = client.Ping(ctx, nil)
-	if err != nil {
+	// 测试连接
+	if err := client.Ping(ctx, nil); err != nil {
 		return nil, fmt.Errorf("MongoDB Ping失败: %w", err)
 	}
 
-	// 记录连接成功日志
 	log.Printf("MongoDB连接成功: %s", cfg.URI)
 
-	// 返回封装后的客户端实例
 	return &MongoClient{
 		client: client,
-		ctx:    context.Background(), // 创建新的后台上下文
+		ctx:    context.Background(),
 	}, nil
 }
 
@@ -76,18 +84,41 @@ func (m *MongoClient) SaveProxies(database, collection string, proxies []interfa
 	// 获取指定的集合
 	coll := m.client.Database(database).Collection(collection)
 
-	// 创建带10秒超时的上下文
-	ctx, cancel := context.WithTimeout(m.ctx, 10*time.Second)
-	defer cancel() // 确保资源被释放
+	// 配置写入选项
+	opts := options.InsertMany().
+		SetOrdered(false).                // 使用无序写入，提高性能
+		SetBypassDocumentValidation(true) // 跳过文档验证，提高性能
 
-	// 执行批量插入操作
-	result, err := coll.InsertMany(ctx, proxies)
-	if err != nil {
-		return fmt.Errorf("保存到MongoDB失败: %w", err)
+	// 创建带超时的上下文
+	ctx, cancel := context.WithTimeout(m.ctx, 30*time.Second) // 增加超时时间
+	defer cancel()
+
+	// 使用批量写入，每批最多1000条
+	batchSize := 1000
+	for i := 0; i < len(proxies); i += batchSize {
+		end := i + batchSize
+		if end > len(proxies) {
+			end = len(proxies)
+		}
+		batch := proxies[i:end]
+
+		// 添加重试机制
+		var result *mongo.InsertManyResult
+		var err error
+		for retries := 0; retries < 3; retries++ {
+			result, err = coll.InsertMany(ctx, batch, opts)
+			if err == nil {
+				break
+			}
+			log.Printf("批量写入失败(第%d次重试): %v", retries+1, err)
+			time.Sleep(time.Duration(retries+1) * time.Second)
+		}
+		if err != nil {
+			return fmt.Errorf("保存到MongoDB失败: %w", err)
+		}
+		log.Printf("成功保存批次 %d-%d，共 %d 条记录", i, end, len(result.InsertedIDs))
 	}
 
-	// 记录保存成功的数量
-	log.Printf("成功保存 %d 条记录到MongoDB", len(result.InsertedIDs))
 	return nil
 }
 
