@@ -269,32 +269,44 @@ func (s *GeonodeSpider) scrapeURL(ctx context.Context, url string) error {
 // validateAndDeduplicateResults 验证和去重结果
 func (s *GeonodeSpider) validateAndDeduplicateResults() {
 	log.Printf("开始验证和去重，当前总数: %d", len(s.results))
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	
+	// 先进行去重
 	seen := make(map[string]bool)
 	unique := make([]ProxyInfo, 0)
-	validCount := 0
-	totalCount := len(s.results)
-
-	for i, proxy := range s.results {
-		if i%100 == 0 { // 每处理100个打印一次进度
-			log.Printf("验证进度: %d/%d", i, totalCount)
-		}
-
+	
+	for _, proxy := range s.results {
 		key := fmt.Sprintf("%s:%s", proxy.IP, proxy.Port)
 		if !seen[key] {
-			if s.validateProxy(proxy) {
-				seen[key] = true
-				unique = append(unique, proxy)
-				validCount++
-				log.Printf("发现有效代理: %s:%s (%d/%d)", proxy.IP, proxy.Port, validCount, i+1)
-			}
+			seen[key] = true
+			unique = append(unique, proxy)
 		}
 	}
-
-	s.results = unique
-	log.Printf("验证和去重完成，原始数量: %d, 有效数量: %d", totalCount, len(s.results))
+	
+	log.Printf("去重完成，去重后数量: %d", len(unique))
+	
+	// 验证代理
+	validProxies := make([]ProxyInfo, 0)
+	
+	for i, proxy := range unique {
+		log.Printf("正在验证第 %d/%d 个代理: %s:%s", i+1, len(unique), proxy.IP, proxy.Port)
+		
+		if s.validateProxy(proxy) {
+			validProxies = append(validProxies, proxy)
+			log.Printf("代理有效: %s:%s (%d/%d)", proxy.IP, proxy.Port, len(validProxies), i+1)
+		}
+		
+		// 每验证5个代理休息1秒
+		if (i+1) % 5 == 0 {
+			log.Printf("休息1秒...")
+			time.Sleep(time.Second)
+		}
+	}
+	
+	s.mu.Lock()
+	s.results = validProxies
+	s.mu.Unlock()
+	
+	log.Printf("验证完成，有效代理数量: %d", len(validProxies))
 }
 
 // validateProxy 验证代理是否可用
@@ -303,16 +315,16 @@ func (s *GeonodeSpider) validateProxy(proxy ProxyInfo) bool {
 		return false
 	}
 
-	proxyURL := fmt.Sprintf("%s://%s:%s",
+	proxyURL := fmt.Sprintf("%s://%s:%s", 
 		strings.ToLower(proxy.Protocols[0]), proxy.IP, proxy.Port)
-
+	
 	proxyURLParsed, err := url.Parse(proxyURL)
 	if err != nil {
 		return false
 	}
 
 	client := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: 5 * time.Second,
 		Transport: &http.Transport{
 			Proxy: http.ProxyURL(proxyURLParsed),
 		},
