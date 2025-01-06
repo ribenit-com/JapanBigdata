@@ -112,3 +112,53 @@ func (r *RedisClient) RemoveKey(key string) error {
 	}
 	return nil
 }
+
+// RPush 将数据添加到列表末尾
+func (r *RedisClient) RPush(key string, value string) error {
+	return r.client.RPush(r.ctx, key, value).Err()
+}
+
+// LPop 从列表头部弹出数据
+func (r *RedisClient) LPop(key string) (string, error) {
+	return r.client.LPop(r.ctx, key).Result()
+}
+
+// ZRemRangeByScore 删除有序集合中指定分数范围的成员
+func (r *RedisClient) ZRemRangeByScore(key string, min, max float64) error {
+	return r.client.ZRemRangeByScore(r.ctx, key, fmt.Sprintf("%f", min), fmt.Sprintf("%f", max)).Err()
+}
+
+// ZAdd 添加成员到有序集合
+func (r *RedisClient) ZAdd(key string, score float64, member string) error {
+	return r.client.ZAdd(r.ctx, key, &redis.Z{Score: score, Member: member}).Err()
+}
+
+// ZCount 获取有序集合中指定分数范围的成员数量
+func (r *RedisClient) ZCount(key string, min, max float64) (int, error) {
+	return int(r.client.ZCount(r.ctx, key, fmt.Sprintf("%f", min), fmt.Sprintf("%f", max)).Val()), nil
+}
+
+// SIsMember 检查成员是否存在于集合中
+func (r *RedisClient) SIsMember(key string, member string) (bool, error) {
+	return r.client.SIsMember(r.ctx, key, member).Result()
+}
+
+// SAdd 添加成员到集合
+func (r *RedisClient) SAdd(key string, member string) error {
+	return r.client.SAdd(r.ctx, key, member).Err()
+}
+
+// SCard 获取集合成员数量
+func (r *RedisClient) SCard(key string) (int, error) {
+	return int(r.client.SCard(r.ctx, key).Val()), nil
+}
+
+// SMembers 获取集合所有成员
+func (r *RedisClient) SMembers(key string) ([]string, error) {
+	return r.client.SMembers(r.ctx, key).Result()
+}
+
+// Get 获取键值
+func (r *RedisClient) Get(key string) (string, error) {
+	return r.client.Get(r.ctx, key).Result()
+}

@@ -1,5 +1,9 @@
 // Package mongodb 提供MongoDB数据库操作的封装
-// 包含连接管理、数据存储等功能
+// 主要功能包括：
+// - 连接管理：创建和维护MongoDB连接
+// - 数据操作：提供常用的CRUD操作封装
+// - 连接池：管理连接池以提高性能
+// - 错误处理：统一的错误处理和重试机制
 package mongodb
 
 import (
@@ -17,8 +21,8 @@ import (
 // MongoClient MongoDB客户端管理器
 // 负责维护与MongoDB的连接和操作
 type MongoClient struct {
-	client *mongo.Client   // MongoDB官方客户端实例
-	ctx    context.Context // 用于控制操作生命周期的上下文
+	client *mongo.Client   // MongoDB官方客户端实例，用于执行所有数据库操作
+	ctx    context.Context // 上下文对象，用于控制操作的生命周期和取消
 }
 
 // Config MongoDB连接配置
@@ -26,10 +30,16 @@ type MongoClient struct {
 type Config struct {
 	URI      string        // MongoDB连接字符串，格式如：mongodb://host:port
 	Database string        // 要连接的数据库名称
-	Timeout  time.Duration // 连接和操作的超时时间
+	Timeout  time.Duration // 连接和操作的超时时间，超过此时间将取消操作
 }
 
 // NewMongoClient 创建新的MongoDB客户端实例
+// 该函数完成以下工作：
+// 1. 配置MongoDB连接选项
+// 2. 建立数据库连接
+// 3. 验证连接是否成功
+// 4. 返回可用的客户端实例
+//
 // 参数:
 //   - cfg: MongoDB连接配置，包含连接信息和超时设置
 //
@@ -39,20 +49,20 @@ type Config struct {
 func NewMongoClient(cfg *Config) (*MongoClient, error) {
 	// 配置MongoDB客户端选项
 	clientOpts := options.Client().
-		ApplyURI(cfg.URI).
-		SetWriteConcern(writeconcern.New(
-			writeconcern.W(1),                     // 写入确认级别
+		ApplyURI(cfg.URI).                // 设置连接URI
+		SetWriteConcern(writeconcern.New( // 配置写入确认
+			writeconcern.W(1),                     // 写入确认级别：至少1个节点确认
 			writeconcern.J(false),                 // 不等待日志写入
-			writeconcern.WTimeout(10*time.Second), // 写入超时时间
+			writeconcern.WTimeout(10*time.Second), // 写入超时时间：10秒
 		)).
-		SetMaxPoolSize(100).  // 连接池大小
-		SetMinPoolSize(10).   // 最小连接数
-		SetMaxConnecting(20). // 最大并发连接数
-		SetRetryWrites(true)  // 启用重试写入
+		SetMaxPoolSize(100).  // 设置连接池最大连接数
+		SetMinPoolSize(10).   // 设置连接池最小连接数
+		SetMaxConnecting(20). // 设置最大并发连接数
+		SetRetryWrites(true)  // 启用写入重试机制
 
 	// 创建带超时的上下文
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
-	defer cancel()
+	defer cancel() // 确保资源被释放
 
 	// 连接到MongoDB服务器
 	client, err := mongo.Connect(ctx, clientOpts)
@@ -60,20 +70,27 @@ func NewMongoClient(cfg *Config) (*MongoClient, error) {
 		return nil, fmt.Errorf("MongoDB连接失败: %w", err)
 	}
 
-	// 测试连接
+	// 测试连接是否成功
 	if err := client.Ping(ctx, nil); err != nil {
 		return nil, fmt.Errorf("MongoDB Ping失败: %w", err)
 	}
 
+	// 记录连接成功日志
 	log.Printf("MongoDB连接成功: %s", cfg.URI)
 
+	// 返回初始化好的客户端实例
 	return &MongoClient{
 		client: client,
-		ctx:    context.Background(),
+		ctx:    context.Background(), // 使用新的上下文用于后续操作
 	}, nil
 }
 
 // SaveProxies 批量保存代理信息到MongoDB
+// 该方法实现了高效的批量写入，包含以下特性：
+// - 分批处理大量数据
+// - 自动重试机制
+// - 性能优化选项
+//
 // 参数:
 //   - database: 目标数据库名称
 //   - collection: 目标集合名称
@@ -85,34 +102,35 @@ func (m *MongoClient) SaveProxies(database, collection string, proxies []interfa
 	// 获取指定的集合
 	coll := m.client.Database(database).Collection(collection)
 
-	// 配置写入选项
+	// 配置写入选项，优化性能
 	opts := options.InsertMany().
 		SetOrdered(false).                // 使用无序写入，提高性能
 		SetBypassDocumentValidation(true) // 跳过文档验证，提高性能
 
-	// 创建带超时的上下文
-	ctx, cancel := context.WithTimeout(m.ctx, 30*time.Second) // 增加超时时间
+	// 创建30秒超时的上下文
+	ctx, cancel := context.WithTimeout(m.ctx, 30*time.Second)
 	defer cancel()
 
-	// 使用批量写入，每批最多1000条
+	// 分批处理，每批最多1000条数据
 	batchSize := 1000
 	for i := 0; i < len(proxies); i += batchSize {
+		// 计算当前批次的结束位置
 		end := i + batchSize
 		if end > len(proxies) {
 			end = len(proxies)
 		}
 		batch := proxies[i:end]
 
-		// 添加重试机制
+		// 添加重试机制，最多重试3次
 		var result *mongo.InsertManyResult
 		var err error
 		for retries := 0; retries < 3; retries++ {
 			result, err = coll.InsertMany(ctx, batch, opts)
 			if err == nil {
-				break
+				break // 写入成功，跳出重试循环
 			}
 			log.Printf("批量写入失败(第%d次重试): %v", retries+1, err)
-			time.Sleep(time.Duration(retries+1) * time.Second)
+			time.Sleep(time.Duration(retries+1) * time.Second) // 递增重试等待时间
 		}
 		if err != nil {
 			return fmt.Errorf("保存到MongoDB失败: %w", err)
@@ -125,6 +143,7 @@ func (m *MongoClient) SaveProxies(database, collection string, proxies []interfa
 
 // Close 关闭MongoDB连接
 // 在程序结束时调用，确保资源被正确释放
+//
 // 返回:
 //   - error: 如果关闭连接时发生错误则返回
 func (m *MongoClient) Close() error {
@@ -132,24 +151,38 @@ func (m *MongoClient) Close() error {
 }
 
 // GetProxies 从MongoDB获取指定数量的代理
+// 该方法实现了高效的批量查询，包含以下特性：
+// - 限制返回数量
+// - 自动超时控制
+// - 结果解析和过滤
+//
+// 参数:
+//   - database: 数据库名称
+//   - collection: 集合名称
+//   - limit: 限制返回的代理数量
+//
+// 返回:
+//   - []string: 代理地址列表
+//   - error: 如果查询失败则返回错误
 func (m *MongoClient) GetProxies(database, collection string, limit int) ([]string, error) {
-	// 获取集合
+	// 获取集合引用
 	coll := m.client.Database(database).Collection(collection)
 
-	// 设置查询选项
+	// 设置查询选项，限制返回数量
 	opts := options.Find().SetLimit(int64(limit))
 
-	// 执行查询
+	// 创建10秒超时的上下文
 	ctx, cancel := context.WithTimeout(m.ctx, 10*time.Second)
 	defer cancel()
 
+	// 执行查询
 	cursor, err := coll.Find(ctx, bson.M{}, opts)
 	if err != nil {
 		return nil, fmt.Errorf("查询MongoDB失败: %w", err)
 	}
 	defer cursor.Close(ctx)
 
-	// 解析结果
+	// 解析查询结果
 	var results []map[string]interface{}
 	if err = cursor.All(ctx, &results); err != nil {
 		return nil, fmt.Errorf("解析查询结果失败: %w", err)
@@ -164,4 +197,22 @@ func (m *MongoClient) GetProxies(database, collection string, limit int) ([]stri
 	}
 
 	return proxies, nil
+}
+
+// Client 获取MongoDB客户端实例
+// 该方法提供对内部client字段的安全访问
+//
+// 返回:
+//   - *mongo.Client: MongoDB官方客户端实例
+func (m *MongoClient) Client() *mongo.Client {
+	return m.client
+}
+
+// Context 获取上下文
+// 该方法提供对内部ctx字段的安全访问
+//
+// 返回:
+//   - context.Context: 当前使用的上下文对象
+func (m *MongoClient) Context() context.Context {
+	return m.ctx
 }
