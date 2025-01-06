@@ -8,6 +8,7 @@ import (
 	"log"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/writeconcern"
@@ -128,4 +129,39 @@ func (m *MongoClient) SaveProxies(database, collection string, proxies []interfa
 //   - error: 如果关闭连接时发生错误则返回
 func (m *MongoClient) Close() error {
 	return m.client.Disconnect(m.ctx)
+}
+
+// GetProxies 从MongoDB获取指定数量的代理
+func (m *MongoClient) GetProxies(database, collection string, limit int) ([]string, error) {
+	// 获取集合
+	coll := m.client.Database(database).Collection(collection)
+
+	// 设置查询选项
+	opts := options.Find().SetLimit(int64(limit))
+
+	// 执行查询
+	ctx, cancel := context.WithTimeout(m.ctx, 10*time.Second)
+	defer cancel()
+
+	cursor, err := coll.Find(ctx, bson.M{}, opts)
+	if err != nil {
+		return nil, fmt.Errorf("查询MongoDB失败: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	// 解析结果
+	var results []map[string]interface{}
+	if err = cursor.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("解析查询结果失败: %w", err)
+	}
+
+	// 提取代理地址
+	proxies := make([]string, 0, len(results))
+	for _, result := range results {
+		if proxy, ok := result["proxy"].(string); ok {
+			proxies = append(proxies, proxy)
+		}
+	}
+
+	return proxies, nil
 }

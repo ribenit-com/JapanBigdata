@@ -1,0 +1,40 @@
+Mongo
+http://192.168.20.6:30643
+redis
+http://192.168.20.6:32430
+
+| 方法名 | 功能描述 | 使用示例 |
+|--------|----------|----------|
+| NewProxyPool(config Config) | 创建新的代理池实例 | pool := NewProxyPool(Config{MaxRetries: 3, Timeout: 10*time.Second}) |
+| AddProxy(proxyURL, protocol string) | 手动添加单个代理到池中 | pool.AddProxy("http://1.2.3.4:8080", "http") |
+| GetProxy() | 获取评分最高的可用代理 | proxy := pool.GetProxy() |
+| checkProxy(proxy *Proxy) | 检查单个代理是否可用 | err := pool.checkProxy(proxy) |
+| UpdateScore(proxy *Proxy, success bool) | 更新代理的评分 | pool.UpdateScore(proxy, true) |
+| RemoveProxy(proxyURL string) | 从池中移除指定代理 | pool.RemoveProxy("http://1.2.3.4:8080") |
+| StartChecker(ctx, interval) | 启动定期检查器 | pool.StartChecker(ctx, 5*time.Minute) |
+| LoadProxiesFromMongo(mongoClient, redisClient, batchSize) | 从MongoDB加载代理到Redis | pool.LoadProxiesFromMongo(mongoClient, redisClient, 500) |
+| GetNextValidProxy(redisClient, mongoClient) | 获取下一个可用代理 | proxy, err := pool.GetNextValidProxy(redisClient, mongoClient) |
+| RefreshProxyPool(redisClient, mongoClient, threshold) | 刷新代理池 | pool.RefreshProxyPool(redisClient, mongoClient, 100) |
+主要工作流程：
+创建代理池：pool := NewProxyPool(config)
+从MongoDB加载代理到Redis：pool.LoadProxiesFromMongo(...)
+获取并使用代理：proxy, err := pool.GetNextValidProxy(...)
+更新代理评分：pool.UpdateScore(proxy, success)
+自动刷新池：pool.RefreshProxyPool(...)
+
+// 1. 初始化
+pool := NewProxyPool(config)
+
+// 2. 启动自动检查
+go pool.StartChecker(ctx, 5*time.Minute)
+
+// 3. 加载初始代理
+err := pool.LoadProxiesFromMongo(mongoClient, redisClient, 500)
+
+// 4. 获取代理使用
+proxy, err := pool.GetNextValidProxy(redisClient, mongoClient)
+if err == nil {
+    // 使用代理...
+    // 更新评分
+    pool.UpdateScore(proxy, true)
+}
