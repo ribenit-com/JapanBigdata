@@ -1,3 +1,5 @@
 {
-    "go.toolsEnvVars": {}
+    "go.toolsEnvVars": {},
+    "go.testTimeout": "5m",
+    "go.testFlags": ["-timeout", "5m"]
 }

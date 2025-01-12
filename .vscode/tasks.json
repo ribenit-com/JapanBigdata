@@ -1,0 +1,23 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Test TikTok Login",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "test",
+                "-timeout",
+                "5m",
+                "-v",
+                "./pkg/cookie",
+                "-run",
+                "^TestTikTokLogin$"
+            ],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            }
+        }
+    ]
+} 

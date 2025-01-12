@@ -216,3 +216,8 @@ func (m *MongoClient) Client() *mongo.Client {
 func (m *MongoClient) Context() context.Context {
 	return m.ctx
 }
+
+// Ping 测试MongoDB连接
+func (c *MongoClient) Ping() error {
+	return c.client.Ping(c.ctx, nil)
+}

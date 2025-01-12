@@ -162,3 +162,25 @@ func (r *RedisClient) SMembers(key string) ([]string, error) {
 func (r *RedisClient) Get(key string) (string, error) {
 	return r.client.Get(r.ctx, key).Result()
 }
+
+// HSet 设置哈希表字段的值
+func (c *RedisClient) HSet(key, field, value string) error {
+	ctx := context.Background()
+	return c.client.HSet(ctx, key, field, value).Err()
+}
+
+// HGet 获取哈希表字段的值
+func (c *RedisClient) HGet(key, field string) (string, error) {
+	ctx := context.Background()
+	return c.client.HGet(ctx, key, field).Result()
+}
+
+// Expire 设置键的过期时间
+func (r *RedisClient) Expire(key string, expiration time.Duration) error {
+	return r.client.Expire(r.ctx, key, expiration).Err()
+}
+
+// Ping 测试Redis连接
+func (r *RedisClient) Ping() error {
+	return r.client.Ping(r.ctx).Err()
+}

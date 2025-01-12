@@ -9,6 +9,19 @@
             "program": "${workspaceFolder}/cmd/proxy/geonode_main.go",
             "env": {},
             "args": []
+        },
+        {
+            "name": "Test TikTok Login",
+            "type": "go",
+            "request": "launch",
+            "mode": "test",
+            "program": "${workspaceFolder}/pkg/cookie",
+            "args": [
+                "-timeout",
+                "5m",
+                "-run",
+                "^TestTikTokLogin$"
+            ]
         }
     ]
 } 
