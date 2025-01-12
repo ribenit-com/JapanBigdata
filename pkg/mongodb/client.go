@@ -221,3 +221,8 @@ func (m *MongoClient) Context() context.Context {
 func (c *MongoClient) Ping() error {
 	return c.client.Ping(c.ctx, nil)
 }
+
+// Database 返回指定数据库
+func (c *MongoClient) Database(name string) *mongo.Database {
+	return c.client.Database(name)
+}

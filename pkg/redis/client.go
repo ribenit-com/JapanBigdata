@@ -184,3 +184,19 @@ func (r *RedisClient) Expire(key string, expiration time.Duration) error {
 func (r *RedisClient) Ping() error {
 	return r.client.Ping(r.ctx).Err()
 }
+
+// Exists 检查键是否存在
+func (c *RedisClient) Exists(key string) (bool, error) {
+	result, err := c.client.Exists(c.ctx, key).Result()
+	return result > 0, err
+}
+
+// SetEX 设置键值对，带过期时间
+func (c *RedisClient) SetEX(key string, value interface{}, expiration time.Duration) error {
+	return c.client.SetEX(c.ctx, key, value, expiration).Err()
+}
+
+// Keys 获取匹配模式的所有键
+func (c *RedisClient) Keys(pattern string) ([]string, error) {
+	return c.client.Keys(c.ctx, pattern).Result()
+}
