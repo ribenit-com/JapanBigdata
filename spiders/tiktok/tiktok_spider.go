@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"japan_spider/pkg/cookie"
 	"japan_spider/pkg/mongodb"
 	"japan_spider/pkg/redis"
-	"japan_spider/spiders/proxyPool/tiktok/model"
+	"japan_spider/spiders/tiktok/model"
 
 	"encoding/json"
 
@@ -40,6 +43,8 @@ type SpiderConfig struct {
 	RedisPassword string        // Redis密码
 	RedisDB       int           // Redis数据库编号
 	Timeout       time.Duration // 超时时间
+	PythonPath    string        // Python解释器路径
+	ScriptsDir    string        // Python脚本目录
 }
 
 // NewTikTokSpider 创建新的抖音爬虫实例
@@ -106,7 +111,7 @@ func (s *TikTokSpider) Login(email, password string) error {
 	// 检查Chrome路径是否存在
 	if _, err := os.Stat(s.config.ChromePath); os.IsNotExist(err) {
 		log.Printf("Chrome路径不存在: %s", s.config.ChromePath)
-		return fmt.Errorf("Chrome浏览器未找到: %w", err)
+		return fmt.Errorf("chrome浏览器未找到: %w", err)
 	}
 	log.Printf("已找到Chrome浏览器: %s", s.config.ChromePath)
 
@@ -309,9 +314,11 @@ func (s *TikTokSpider) saveToRedis(key string, info *model.UserInfo) error {
 
 // 获取当前IP
 func (s *TikTokSpider) getCurrentIP() (string, error) {
-	// 实现获取当前IP的逻辑
-	// 可以通过HTTP请求外部服务获取
-	return "127.0.0.1", nil
+	output, err := s.executePythonScript("get_ip.py")
+	if err != nil {
+		return "", fmt.Errorf("获取IP失败: %w", err)
+	}
+	return strings.TrimSpace(output), nil
 }
 
 // 添加检查过期时间的方法
@@ -320,8 +327,6 @@ func (s *TikTokSpider) isUserInfoExpired(info *model.UserInfo) bool {
 }
 
 // getUserInfo 从Redis或MongoDB获取用户信息
-// email: 用户邮箱
-// ip: 用户IP
 func (s *TikTokSpider) getUserInfo(email, ip string) (*model.UserInfo, error) {
 	log.Printf("开始获取用户信息: email=%s, ip=%s", email, ip)
 
@@ -336,19 +341,17 @@ func (s *TikTokSpider) getUserInfo(email, ip string) (*model.UserInfo, error) {
 		var userInfo model.UserInfo
 		if err := json.Unmarshal([]byte(data), &userInfo); err == nil {
 			// 检查Cookie是否为空
-			if len(userInfo.Cookies) == 0 {
-				log.Printf("用户信息中没有Cookie数据，需要重新登录")
-				return nil, fmt.Errorf("Cookie数据为空")
+			if len(userInfo.Cookies) > 0 {
+				log.Printf("成功从Redis获取用户信息: %s", email)
+				return &userInfo, nil
 			}
-			log.Printf("成功从Redis获取用户信息: %s", email)
-			return &userInfo, nil
+			log.Printf("Redis中的Cookie数据为空")
 		}
 		log.Printf("Redis数据解析失败: %v", err)
 	}
-	log.Printf("Redis中未找到数据或获取失败: %v", err)
+	log.Printf("Redis中未找到数据或获取失败，尝试从MongoDB获取")
 
 	// Redis没有，从MongoDB获取
-	log.Printf("尝试从MongoDB获取用户信息")
 	collection := s.mongoClient.Database(s.config.MongoDatabase).Collection("tiktok_users")
 
 	var userInfo model.UserInfo
@@ -362,7 +365,16 @@ func (s *TikTokSpider) getUserInfo(email, ip string) (*model.UserInfo, error) {
 		return nil, fmt.Errorf("从MongoDB获取用户信息失败: %w", err)
 	}
 
-	log.Printf("成功从MongoDB获取用户信息: %s", email)
+	// 将MongoDB中的数据保存到Redis
+	log.Printf("从MongoDB获取数据成功，开始同步到Redis")
+	if err := s.saveToRedis(key, &userInfo); err != nil {
+		log.Printf("同步到Redis失败: %v", err)
+		// 即使同步失败也继续使用MongoDB的数据
+	} else {
+		log.Printf("成功同步数据到Redis")
+	}
+
+	log.Printf("成功获取用户信息: %s (Cookie数量: %d)", email, len(userInfo.Cookies))
 	return &userInfo, nil
 }
 
@@ -420,9 +432,27 @@ func (s *TikTokSpider) openBrowserWithCookie(cookies []cookie.Cookie) error {
 	if err != nil {
 		s.cancel()
 		log.Printf("浏览器操作失败: %v", err)
-		return fmt.Errorf("使用Cookie打开浏览器失败: %w", err)
+		return fmt.Errorf("使用cookie打开浏览器失败: %w", err)
 	}
 
 	log.Printf("成功使用Cookie打开浏览器")
 	return nil
+}
+
+// executePythonScript 执行Python脚本
+func (s *TikTokSpider) executePythonScript(scriptName string, args ...string) (string, error) {
+	scriptPath := filepath.Join(s.config.ScriptsDir, scriptName)
+	log.Printf("执行Python脚本: %s", scriptPath)
+
+	// 构建命令
+	cmdArgs := append([]string{scriptPath}, args...)
+	cmd := exec.Command(s.config.PythonPath, cmdArgs...)
+
+	// 执行脚本并获取输出
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("执行Python脚本失败: %w", err)
+	}
+
+	return string(output), nil
 }

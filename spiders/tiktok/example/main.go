@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"time"
 
-	"japan_spider/spiders/proxyPool/tiktok"
+	"japan_spider/spiders/tiktok"
 )
 
 func main() {
@@ -25,6 +25,8 @@ func main() {
 		RedisPassword: "",
 		RedisDB:       0,
 		Timeout:       5 * time.Minute,
+		PythonPath:    "python",     // 或具体的Python路径
+		ScriptsDir:    "../scripts", // 修正脚本目录路径
 	}
 
 	// 创建爬虫实例

@@ -3,6 +3,9 @@
     <user>
         <email>zuandilong@gmail.com</email>
         <password>Jia@hong565</password>
+        <status>active</status>
+        <last_login></last_login>
+        <cookie_valid>true</cookie_valid>
     </user>
     <!-- 可以添加更多用户 -->
 </users> 

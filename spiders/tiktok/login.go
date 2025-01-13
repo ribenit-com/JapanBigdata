@@ -99,33 +99,3 @@ func (s *TikTokSpider) getCookies(cookies *[]*cookie.Cookie) chromedp.Tasks {
 		}),
 	}
 }
-
-// saveCookies 保存Cookies到存储
-func (s *TikTokSpider) saveCookies(email string, cookies []*cookie.Cookie) error {
-	// 创建会话
-	session := &cookie.Session{
-		ID:        fmt.Sprintf("tiktok_%s", email),
-		UserID:    email,
-		Cookies:   convertCookies(cookies),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(24 * time.Hour),
-	}
-
-	// 保存到MongoDB
-	if err := s.cookieCtrl.SaveSession(session); err != nil {
-		return fmt.Errorf("保存到MongoDB失败: %w", err)
-	}
-
-	// 保存到Redis
-	cookieKey := fmt.Sprintf("tiktok:cookies:%s", email)
-	for _, cookie := range cookies {
-		if cookie.Name == "sessionid" || cookie.Name == "tt_csrf_token" {
-			if err := s.redisClient.HSet(cookieKey, cookie.Name, cookie.Value); err != nil {
-				return fmt.Errorf("保存到Redis失败: %w", err)
-			}
-		}
-	}
-
-	return s.redisClient.Expire(cookieKey, 24*time.Hour)
-}
