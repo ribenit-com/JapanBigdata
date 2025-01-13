@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,8 @@ import (
 	"encoding/json"
 
 	"japan_spider/spiders/tiktok/tiktok_model"
+
+	"runtime"
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
@@ -37,6 +40,7 @@ type TikTokSpider struct {
 // SpiderConfig 爬虫配置
 type SpiderConfig struct {
 	ChromePath    string        // Chrome浏览器路径
+	ChromeFlags   []string      // Chrome启动参数
 	MongoURI      string        // MongoDB连接URI
 	MongoDatabase string        // MongoDB数据库名
 	RedisHost     string        // Redis主机地址
@@ -109,33 +113,56 @@ func (s *TikTokSpider) Close() error {
 
 // Login 执行登录操作获取Cookie
 func (s *TikTokSpider) Login(email, password string) error {
-	// 检查Chrome路径是否存在
+	// 检查Chrome路径
 	if _, err := os.Stat(s.config.ChromePath); os.IsNotExist(err) {
-		log.Printf("Chrome路径不存在: %s", s.config.ChromePath)
-		return fmt.Errorf("chrome浏览器未找到: %w", err)
+		return fmt.Errorf("Chrome not found at path: %s", s.config.ChromePath)
 	}
-	log.Printf("已找到Chrome浏览器: %s", s.config.ChromePath)
+	log.Printf("Chrome路径验证成功: %s", s.config.ChromePath)
 
 	// 创建浏览器选项
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+	var opts []chromedp.ExecAllocatorOption
+
+	// 先尝试关闭已存在的Chrome实例
+	s.killChromeProcess()
+	time.Sleep(2 * time.Second)
+
+	opts = append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(s.config.ChromePath),
+		chromedp.Flag("remote-debugging-port", "9222"),
+		chromedp.Flag("user-data-dir", filepath.Join(os.TempDir(), "chrome-data")),
 		chromedp.Flag("headless", false),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+		chromedp.Flag("disable-blink-features=AutomationControlled", true),
 		chromedp.Flag("disable-infobars", true),
 		chromedp.Flag("start-maximized", true),
 		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 	)
+	log.Printf("Chrome启动选项配置完成")
 
 	// 创建浏览器上下文
-	allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
+	ctx := context.Background()
+	allocCtx, cancel := chromedp.NewExecAllocator(ctx, opts...)
+	var cancel2, cancel3 context.CancelFunc
+	ctx, cancel2 = chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
+	ctx, cancel3 = context.WithTimeout(ctx, 30*time.Second)
+	s.cancel = func() { cancel3(); cancel2(); cancel() }
 
 	// 保存上下文和取消函数
 	s.ctx = ctx
 	s.cancel = cancel
+
+	// 启动浏览器并检查是否成功
+	log.Printf("开始启动Chrome浏览器...")
+	if err := chromedp.Run(ctx); err != nil {
+		s.cancel()
+		return fmt.Errorf("启动Chrome失败: %w", err)
+	}
+
+	log.Println("Chrome启动成功，准备执行登录操作")
+	// 等待确保Chrome完全启动
+	time.Sleep(5 * time.Second)
 
 	// 执行登录操作
 	var cookies []*cookie.Cookie
@@ -383,25 +410,11 @@ func (s *TikTokSpider) getUserInfo(email, ip string) (*tiktok_model.UserInfo, er
 func (s *TikTokSpider) openBrowserWithCookie(cookies []cookie.Cookie) error {
 	log.Printf("开始使用Cookie打开浏览器，Cookie数量: %d", len(cookies))
 
-	// 创建浏览器选项
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.ExecPath(s.config.ChromePath),
-		chromedp.Flag("headless", false),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		chromedp.Flag("disable-infobars", true),
-		chromedp.Flag("start-maximized", true),
-		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
-	)
-
-	// 创建浏览器上下文
-	allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	ctx, cancel := chromedp.NewContext(allocCtx)
-
-	// 保存上下文和取消函数
+	// 连接到已运行的Chrome
+	allocCtx, cancel := chromedp.NewRemoteAllocator(context.Background(), "ws://localhost:9222")
+	ctx, cancel2 := chromedp.NewContext(allocCtx)
 	s.ctx = ctx
-	s.cancel = cancel
+	s.cancel = func() { cancel2(); cancel() }
 
 	// 转换Cookie格式
 	var networkCookies []*network.CookieParam
@@ -427,7 +440,8 @@ func (s *TikTokSpider) openBrowserWithCookie(cookies []cookie.Cookie) error {
 	err := chromedp.Run(ctx,
 		network.Enable(),
 		network.SetCookies(networkCookies),
-		chromedp.Navigate("https://www.tiktok.com"),
+		// 使用特定的 Tab ID 打开页面
+		chromedp.Navigate("https://www.tiktok.com/foryou"),
 		chromedp.Sleep(5*time.Second),
 	)
 	if err != nil {
@@ -456,4 +470,25 @@ func (s *TikTokSpider) executePythonScript(scriptName string, args ...string) (s
 	}
 
 	return string(output), nil
+}
+
+// 添加这些辅助方法
+func (s *TikTokSpider) checkPort(address string) error {
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		return err
+	}
+	conn.Close()
+	return nil
+}
+
+func (s *TikTokSpider) killChromeProcess() {
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("taskkill", "/F", "/IM", "chrome.exe")
+	} else {
+		cmd = exec.Command("pkill", "chrome")
+	}
+	cmd.Run()
+	time.Sleep(2 * time.Second) // 等待进程完全退出
 }

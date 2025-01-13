@@ -16,7 +16,14 @@ func main() {
 
 	// 创建配置
 	config := &tiktok_Unit.SpiderConfig{
-		ChromePath:    `C:\Users\Administrator\AppData\Local\Google\Chrome\Bin\Google Chrome.exe`, // 修改为你的Chrome路径
+		ChromePath: `C:\Users\Administrator\AppData\Local\Google\Chrome\Bin\chrome.exe`, // 修改为正确的可执行文件名
+		ChromeFlags: []string{
+			"--remote-debugging-port=9222",
+			"--user-data-dir=D:\\selenium", // 使用绝对路径
+			"--no-first-run",
+			"--no-default-browser-check",
+			"--disable-blink-features=AutomationControlled",
+		},
 		MongoURI:      "mongodb://192.168.20.6:30643",
 		MongoDatabase: "spider",
 		RedisHost:     "192.168.20.6",
