@@ -1,13 +1,12 @@
 package main
 
 import (
+	"japan_spider/spiders/tiktok/tiktok_Unit"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
-
-	"japan_spider/spiders/tiktok"
 )
 
 func main() {
@@ -16,8 +15,8 @@ func main() {
 	log.Printf("启动TikTok爬虫...")
 
 	// 创建配置
-	config := &tiktok.SpiderConfig{
-		ChromePath:    `C:\Users\Administrator\AppData\Local\Google\Chrome\Bin\Google Chrome.exe`, // 实际Chrome路径
+	config := &tiktok_Unit.SpiderConfig{
+		ChromePath:    `C:\Users\Administrator\AppData\Local\Google\Chrome\Bin\Google Chrome.exe`, // 修改为你的Chrome路径
 		MongoURI:      "mongodb://192.168.20.6:30643",
 		MongoDatabase: "spider",
 		RedisHost:     "192.168.20.6",
@@ -25,12 +24,12 @@ func main() {
 		RedisPassword: "",
 		RedisDB:       0,
 		Timeout:       5 * time.Minute,
-		PythonPath:    "python",     // 或具体的Python路径
-		ScriptsDir:    "../scripts", // 修正脚本目录路径
+		PythonPath:    "python",
+		ScriptsDir:    "scripts",
 	}
 
 	// 创建爬虫实例
-	spider, err := tiktok.NewTikTokSpider(config)
+	spider, err := tiktok_Unit.NewTikTokSpider(config)
 	if err != nil {
 		log.Fatalf("创建爬虫失败: %v", err)
 	}

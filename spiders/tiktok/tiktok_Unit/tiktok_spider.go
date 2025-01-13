@@ -1,4 +1,4 @@
-package tiktok
+package tiktok_Unit
 
 import (
 	"context"
@@ -13,9 +13,10 @@ import (
 	"japan_spider/pkg/cookie"
 	"japan_spider/pkg/mongodb"
 	"japan_spider/pkg/redis"
-	"japan_spider/spiders/tiktok/model"
 
 	"encoding/json"
+
+	"japan_spider/spiders/tiktok/tiktok_model"
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
@@ -152,10 +153,10 @@ func (s *TikTokSpider) Login(email, password string) error {
 	}
 
 	// 构建用户信息
-	userInfo := &model.UserInfo{
+	userInfo := &tiktok_model.UserInfo{
 		Email:    email,
 		Password: password,
-		BrowserInfo: model.BrowserInfo{
+		BrowserInfo: tiktok_model.BrowserInfo{
 			UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ...",
 			Version:   "120.0.0.0",
 			Platform:  "Windows",
@@ -252,7 +253,7 @@ func (s *TikTokSpider) loginWithExistingCookie(email, ip string) error {
 
 // saveToMongoDB 将用户信息异步保存到MongoDB
 // info: 要保存的用户信息
-func (s *TikTokSpider) saveToMongoDB(info *model.UserInfo) {
+func (s *TikTokSpider) saveToMongoDB(info *tiktok_model.UserInfo) {
 	log.Printf("开始保存用户信息到MongoDB: %s", info.Email)
 
 	// 获取集合引用
@@ -289,7 +290,7 @@ func (s *TikTokSpider) saveToMongoDB(info *model.UserInfo) {
 // saveToRedis 将用户信息保存到Redis
 // key: Redis键名
 // info: 要保存的用户信息
-func (s *TikTokSpider) saveToRedis(key string, info *model.UserInfo) error {
+func (s *TikTokSpider) saveToRedis(key string, info *tiktok_model.UserInfo) error {
 	log.Printf("开始保存用户信息到Redis: %s", key)
 
 	// 序列化用户信息
@@ -322,12 +323,12 @@ func (s *TikTokSpider) getCurrentIP() (string, error) {
 }
 
 // 添加检查过期时间的方法
-func (s *TikTokSpider) isUserInfoExpired(info *model.UserInfo) bool {
+func (s *TikTokSpider) isUserInfoExpired(info *tiktok_model.UserInfo) bool {
 	return time.Now().After(info.ExpireTime)
 }
 
 // getUserInfo 从Redis或MongoDB获取用户信息
-func (s *TikTokSpider) getUserInfo(email, ip string) (*model.UserInfo, error) {
+func (s *TikTokSpider) getUserInfo(email, ip string) (*tiktok_model.UserInfo, error) {
 	log.Printf("开始获取用户信息: email=%s, ip=%s", email, ip)
 
 	// 构建Redis键名
@@ -338,7 +339,7 @@ func (s *TikTokSpider) getUserInfo(email, ip string) (*model.UserInfo, error) {
 	data, err := s.redisClient.Get(key)
 	if err == nil && data != "" {
 		log.Printf("从Redis获取到数据，开始解析")
-		var userInfo model.UserInfo
+		var userInfo tiktok_model.UserInfo
 		if err := json.Unmarshal([]byte(data), &userInfo); err == nil {
 			// 检查Cookie是否为空
 			if len(userInfo.Cookies) > 0 {
@@ -354,7 +355,7 @@ func (s *TikTokSpider) getUserInfo(email, ip string) (*model.UserInfo, error) {
 	// Redis没有，从MongoDB获取
 	collection := s.mongoClient.Database(s.config.MongoDatabase).Collection("tiktok_users")
 
-	var userInfo model.UserInfo
+	var userInfo tiktok_model.UserInfo
 	err = collection.FindOne(
 		context.Background(),
 		bson.M{"email": email, "ip": ip},

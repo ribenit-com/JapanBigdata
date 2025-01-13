@@ -1,4 +1,4 @@
-package model
+package tiktok_model
 
 import (
 	"japan_spider/pkg/cookie"

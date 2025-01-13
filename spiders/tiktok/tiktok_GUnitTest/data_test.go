@@ -9,7 +9,7 @@ import (
 
 	"japan_spider/pkg/mongodb"
 	"japan_spider/pkg/redis"
-	"japan_spider/spiders/tiktok/model"
+	model "japan_spider/spiders/tiktok/tiktok_model"
 
 	"go.mongodb.org/mongo-driver/bson"
 )

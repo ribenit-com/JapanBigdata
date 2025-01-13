@@ -1,60 +1,67 @@
 海外抖音爬虫
 
 spiders/tiktok/
-├── config/                          # 配置文件目录
-│   └── users.xml                    # 用户账号配置，存储邮箱和密码信息
+├── tiktok_Unit/                   # 核心功能单元目录
+│   ├── tiktok_spider.go           # 爬虫核心实现
+│   │   ├── TikTokSpider           # 爬虫结构体
+│   │   ├── NewTikTokSpider()      # 创建爬虫实例
+│   │   ├── Login()                # 执行登录
+│   │   ├── CheckAndLogin()        # 检查并登录
+│   │   ├── getCurrentIP()         # 获取当前IP
+│   │   └── Close()                # 清理资源
+│   │
+│   ├── login.go                   # 登录相关功能
+│   │   ├── performLogin()         # 执行登录操作
+│   │   ├── navigateToLogin()      # 导航到登录页
+│   │   ├── fillLoginForm()        # 填写登录表单
+│   │   └── getCookies()           # 获取Cookie
+│   │
+│   └── utils.go                    # 工具函数
+│       ├── convertNetworkCookies() # 转换Cookie格式
+│       └── convertCookies()        # Cookie转换工具
 │
-├── example/                         # 示例代码和测试目录
-│   ├── main.go                      # 主程序入口，演示爬虫使用方法
-│   ├── test_data.go                # 数据查看工具，包含 Redis 和 MongoDB 数据查看方法
-│   └── view_data_test.go           # 测试用例，包含数据查看和登录状态失效测试
+├── tiktok_model/                  # 数据模型目录
+│   └── user.go                    # 用户数据模型
+│       ├── BrowserInfo            # 浏览器信息结构
+│       └── UserInfo               # 用户信息结构
 │
-├── model/                          # 数据模型定义目录
-│   └── user.go                     # 用户信息结构体定义，包含：
-│                                   # - 用户基本信息（邮箱、密码）
-│                                   # - 浏览器信息
-│                                   # - Cookie 数据
-│                                   # - 登录状态和时间信息
+├── scripts/                        # Python脚本目录
+│   └── get_ip.py                   # IP获取脚本
+│       └── get_current_ip()        # 获取当前IP
 │
-├── scripts/                        # Python 脚本目录
-│   └── get_ip.py                   # 获取当前 IP 的 Python 脚本
-│
-├── login.go                        # 登录相关功能实现
-│                                   # - 表单填写
-│                                   # - 验证码处理
-│                                   # - 登录状态检查
-│
-├── tiktok_spider.go                # 爬虫核心实现
-│                                   # - 浏览器控制
-│                                   # - Cookie 管理
-│                                   # - 数据存储（Redis/MongoDB）
-│                                   # - 会话维护
-│
-└── utils.go                        # 工具函数
-                                    # - Cookie 格式转换
-                                    # - 数据处理辅助函数
+└── main.go                        # 主程序入口
+    ├── main()                     # 主函数
+    ├── 配置初始化                  # 设置爬虫配置
+    ├── 爬虫实例化                  # 创建爬虫对象
+    └── 信号处理                    # 处理退出信号
 
-主要功能模块：
-1. 配置管理 (config/)
-   - 用户账号管理
-   - 登录凭证存储
-
-2. 数据模型 (model/)
-   - 用户信息结构
-   - 浏览器信息定义
-   - Cookie 数据格式
-
-3. 核心功能 (*.go)
-   - 自动登录
-   - Cookie 管理
-   - 会话维护
+功能模块说明：
+1. tiktok_Unit/
+   - 爬虫核心功能实现
+   - 浏览器自动化控制
+   - Cookie管理
+   - 登录流程处理
    - 数据持久化
 
-4. 工具和脚本 (scripts/)
-   - IP 检测
-   - 环境检查
+2. tiktok_model/
+   - 数据结构定义
+   - 用户信息模型
+   - 浏览器信息模型
+   - MongoDB映射
 
-5. 示例和测试 (example/)
-   - 使用示例
-   - 数据查看
-   - 功能测试
+3. scripts/
+   - 辅助功能脚本
+   - IP地址获取
+   - 环境检测
+
+4. main.go
+   - 程序入口
+   - 配置管理
+   - 生命周期控制
+   - 状态监控
+
+数据流向：
+1. 配置加载 -> 爬虫初始化
+2. 登录验证 -> Cookie获取
+3. 数据存储 -> Redis/MongoDB
+4. 状态维护 -> 会话保持
